@@ -7,7 +7,55 @@ import tempfile
 import os
 import zipfile
 
-st.set_page_config(page_title="Webflow Content Manager", layout="wide")
+# Hide the default menu
+st.set_page_config(
+    page_title="Webflow Page Content Manager", 
+    layout="wide"
+)
+
+# Initialize session state
+if 'site_id' not in st.session_state:
+    st.session_state.site_id = ''
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ''
+if 'openai_key' not in st.session_state:
+    st.session_state.openai_key = ''
+if 'pages' not in st.session_state:
+    st.session_state.pages = []
+if 'locales' not in st.session_state:
+    st.session_state.locales = []
+if 'current_content' not in st.session_state:
+    st.session_state.current_content = None
+if 'parsed_nodes' not in st.session_state:
+    st.session_state.parsed_nodes = None
+
+# Add sidebar configuration
+with st.sidebar:
+    st.title("Navigation")
+    
+    # Navigation with radio buttons
+    page = st.radio(
+        "Select Page",
+        ["Page Content", "Static Elements"],
+        index=0,
+        key="navigation"
+    )
+    
+    if page == "Static Elements":
+        st.switch_page("pages/1_Static_Elements.py")
+    
+    st.divider()
+    
+    # OpenAI Configuration
+    st.subheader("OpenAI Configuration")
+    openai_key = st.text_input(
+        "OpenAI API Key",
+        type="password",
+        value=st.session_state.openai_key,
+        help="Your OpenAI API key for translations"
+    )
+    if openai_key:
+        st.session_state.openai_key = openai_key
 
 def get_pages(site_id, api_key):
     """Get list of pages with their IDs"""
@@ -195,8 +243,13 @@ def translate_content_with_openai(parsed_nodes, target_language, api_key):
         print(json.dumps(parsed_nodes, indent=2))
         
         # Prepare the system message explaining what we want
-        system_message = f"""You are a professional translator. 
+        system_message = f"""You are a professional translator with 20 years of experience.  
         Translate only the "text" values in the JSON to {target_language}. 
+        Follow these rules when translating:
+
+        - When encountering the word "Deriv" and any succeeding word, analyze the context and based on it, keep it in English. For example, "Deriv Blog," "Deriv Life," "Deriv Bot," and "Deriv App" should be kept in English.
+        - Keep product names such as P2P, MT5, Deriv X, Deriv cTrader, SmartTrader, Deriv Trader, Deriv GO, Deriv Bot, and Binary Bot in English.
+        
         Keep all other JSON structure and values exactly the same.
         Return only the JSON, no explanations."""
         
@@ -258,7 +311,8 @@ def update_page_content(page_id, locale_id, api_key, translated_content):
     # Convert translated content into the correct format
     for node in translated_content:
         node_data = {
-            "nodeId": node["nodeId"]
+            "nodeId": node.get('id') or node.get('nodeId'),  # Try both possible keys
+            "propertyOverrides": []
         }
         
         if "propertyOverrides" in node:
@@ -266,7 +320,7 @@ def update_page_content(page_id, locale_id, api_key, translated_content):
             for override in node["propertyOverrides"]:
                 node_data["propertyOverrides"].append({
                     "propertyId": override["propertyId"],
-                    "text": override["text"]
+                    "text": override["text"] if isinstance(override["text"], str) else override["text"].get('text', '')
                 })
         
         request_body["nodes"].append(node_data)
@@ -305,23 +359,7 @@ def update_page_content(page_id, locale_id, api_key, translated_content):
         return False, error_message
 
 def main():
-    st.title("Webflow Content Manager")
-    
-    # Initialize session state
-    if 'site_id' not in st.session_state:
-        st.session_state.site_id = ''
-    if 'api_key' not in st.session_state:
-        st.session_state.api_key = ''
-    if 'pages' not in st.session_state:
-        st.session_state.pages = []
-    if 'locales' not in st.session_state:
-        st.session_state.locales = []
-    if 'openai_key' not in st.session_state:
-        st.session_state.openai_key = ''
-    if 'current_content' not in st.session_state:
-        st.session_state.current_content = None
-    if 'parsed_nodes' not in st.session_state:
-        st.session_state.parsed_nodes = None
+    st.title("Webflow Page Content Manager")
     
     # Print current session state
     print("\nCurrent Session State:")
@@ -331,18 +369,6 @@ def main():
     print(f"Number of locales: {len(st.session_state.locales)}")
     print(f"Has OpenAI key: {bool(st.session_state.openai_key)}")
     print(f"Has current content: {bool(st.session_state.current_content)}")
-    
-    # Add OpenAI API key input in sidebar
-    with st.sidebar:
-        st.subheader("OpenAI Configuration")
-        openai_key = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            value=st.session_state.openai_key,
-            help="Your OpenAI API key for translations"
-        )
-        if openai_key:
-            st.session_state.openai_key = openai_key
     
     # Step 1: Get API Token and Site ID
     with st.form("credentials_form"):
